@@ -26,6 +26,7 @@ def preview(files, group):
 
 def render_batch():
     st.subheader("V2 · CIDACC 전체 검증")
+    run_slot = st.container()
     st.write("동일한 이름의 이미지와 TXT를 자동 연결합니다. 예: 101.png ↔ 101.txt")
     st.info("OpenCV 계수 오차 검증입니다. 학습형 AI 정확도나 개별 위치 검출 정확도가 아닙니다.")
     st.caption("CIDACC 13219972 기준: 클래스 0 = 개별 세포, 1 = 뭉침(정답 개수 제외). 근거: docs/cidacc_class_audit.md")
@@ -48,7 +49,7 @@ def render_batch():
                 stems = {PurePosixPath(n).stem for n in selected}
                 files = [(n, data) for n, data in files if PurePosixPath(n).stem in stems]
             count = sum(n.endswith(".png") for n, _ in files)
-            st.success(f"사진 {count}장과 정답 TXT가 준비되어 있습니다. 아래 분석 실행을 누르세요.")
+            st.success(f"사진 {count}장과 정답 TXT가 준비되어 있습니다. 위쪽의 분석 실행 버튼을 누르세요.")
             st.caption("원본 주석이 비어 있는 335.png, 515.png는 오류로 안내하며 평균 오차에서 제외합니다.")
             if files:
                 preview(files, "distinct")
@@ -73,7 +74,7 @@ def render_batch():
         cfg = Config(mode=mode, sensitivity=sensitivity, min_area=minimum, max_area=maximum)
         fingerprint = hashlib.sha256(repr(([(n, hashlib.sha256(d).hexdigest()) for n, d in files], cfg)).encode()).hexdigest()
         run_label = "전체 분석 실행" if source == "준비된 CIDACC 전체 데이터" and selection == "전체 464장" else "일괄 분석 실행"
-        if st.button(run_label, disabled=not files, type="primary"):
+        if run_slot.button(run_label, disabled=not files, type="primary", use_container_width=True):
             with st.spinner("사진과 정답 주석을 비교하고 있습니다…"):
                 bar = st.progress(0, text="분석 준비 중")
                 def update(done, total):
