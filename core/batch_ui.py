@@ -65,7 +65,22 @@ def show_comparison(rows, files, cfg, fingerprint):
     st.write(f"이 사진에서 프로그램은 **{row['auto_count']}개**, 데이터 제작자가 미리 표시한 기준은 **{row['ground_truth_count']}개**입니다. {meaning}")
     st.caption('개수가 같아도 위치가 맞는지는 별도 확인이 필요합니다. 개수 차이가 1개라고 틀린 위치가 딱 1곳이라는 뜻은 아닙니다.')
     st.info('🟢 초록색 원 = 프로그램이 세포로 판단해 센 곳입니다. 틀릴 수도 있습니다.\n\n🟠 주황색 원 = 크기나 모양 때문에 확신하지 못한 곳입니다. 위의 개수에 넣지 않았습니다. 세포가 없다는 뜻은 아닙니다.')
-    show_reference=st.checkbox('제작자가 정답으로 표시한 위치도 보기 (파란 네모)',key='show_reference')
+    st.markdown('''<style>
+    .st-key-reference_panel {background:#edf5ff; border:2px solid #2878ce; border-radius:14px; padding:18px;}
+    .st-key-reference_panel button {background:#1763b4 !important; color:white !important;
+      border:2px solid #1763b4 !important; font-size:1.1rem; min-height:54px;}
+    .st-key-reference_panel button:hover {background:#104a89 !important;}
+    </style>''', unsafe_allow_html=True)
+    st.session_state.setdefault('reference_visible',False)
+    def toggle_reference():
+        st.session_state['reference_visible']=not st.session_state['reference_visible']
+    with st.container(border=True,key='reference_panel'):
+        st.subheader('🔵 제작자가 표시한 정답 위치 보기')
+        st.write(f"**기준 {row['ground_truth_count']}개가 어디에 있는지 궁금하다면 아래 버튼을 누르세요.** 왼쪽 사진에 파란 네모로 표시합니다.")
+        visible=st.session_state['reference_visible']
+        st.button('✓ 파란 네모 표시 중 · 끄고 원본 보기' if visible else '🔵 정답 위치 보기 · 파란 네모 켜기',
+                  on_click=toggle_reference,key='reference_toggle_button',use_container_width=True)
+    show_reference=st.session_state['reference_visible']
     if show_reference:
         annotation = image_data.get(row['annotation_name'])
         if annotation is None:

@@ -85,9 +85,12 @@ def test_bundled_full_dataset_ready_without_upload():
     next(s for s in at.selectbox if s.label=='확인할 사진').set_value(4).run()
     assert at.metric[0].value=='8개' and at.metric[1].value=='7개'
     assert any('1개 많이' in m.value for m in at.markdown)
-    next(c for c in at.checkbox if '제작자가 정답' in c.label).check().run()
+    next(b for b in at.button if '파란 네모 켜기' in b.label).click().run()
     assert not at.exception
     assert len(at.get('image'))==2
+    assert at.session_state['reference_visible'] is True
+    next(b for b in at.button if '끄고 원본 보기' in b.label).click().run()
+    assert at.session_state['reference_visible'] is False
     error_index=next(i for i,r in enumerate(at.session_state['batch_result'][1]) if r['image_name'].endswith('/335.png'))
     next(s for s in at.selectbox if s.label=='확인할 사진').set_value(error_index).run()
     assert not at.exception
