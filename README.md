@@ -1,5 +1,43 @@
 # Chlorella Vision · 클로렐라 이미지 자동 계수 웹앱
 
+## V2 1차 개발: CIDACC 정답 주석으로 일괄 검증
+
+개발 브랜치: `v2-batch-validation`. V1의 한 장 분석·수동 수정은 유지합니다.
+실행 후 왼쪽 **작업 선택 → V2 · CIDACC 일괄 검증**을 선택하세요.
+
+1. [CIDACC 원본](https://zenodo.org/records/13219972)에서 ZIP을 받습니다.
+2. 앱의 **CIDACC ZIP 업로드**에서 ZIP을 올리고 사진 10장을 선택합니다.
+   또는 압축을 풀어 `distinct/images` 사진 10장과 `distinct/bbs`의 같은 이름 TXT를 함께 올립니다.
+3. **일괄 분석 실행**을 누르면 사진별 자동 계수·정답·절대오차·오차율이 나옵니다.
+4. **전체 결과 CSV 다운로드**로 오류 행을 포함한 결과를 저장합니다.
+
+클래스 `0`만 개별 세포 정답으로 셉니다. 클래스 `1`은 뭉침으로 개별 수에서 제외합니다.
+이 의미는 실제 TXT 628개 집계와 논문 수치·이미지 대조로 확인했습니다.
+[클래스 확인 근거](docs/cidacc_class_audit.md), [개발 및 검증 보고](docs/v2_report.md)를 참고하세요.
+
+정답이 없거나 주석이 잘못되면 정답·오차를 비워 두고 이유를 표시합니다.
+정답이 0이면 백분율오차를 계산하지 않습니다. 학습형 AI 성능 지표가 아닙니다.
+빈 TXT는 실제 0개인지 주석 누락인지 구별할 수 없어 오류로 처리합니다.
+다른 데이터셋에는 이 클래스 의미를 적용하지 마세요.
+
+개발 환경 설치와 테스트:
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements-dev.txt
+.venv\Scripts\python -m pytest -q tests
+.venv\Scripts\python -m streamlit run app.py
+```
+
+명령줄에서 같은 분석을 재현할 수도 있습니다.
+
+```powershell
+.venv\Scripts\python scripts/prepare_cidacc.py CIDACC-dataset.zip --output sample_cidacc --count 10
+.venv\Scripts\python scripts/validate_cidacc.py sample_cidacc/distinct --output validation.csv
+```
+
+실제 데이터는 별도 다운로드하며 GitHub에 포함하지 않습니다. 아래는 V1 당시 안내 기록입니다.
+
 **상태:** V1 개발용 프로토타입 / 실사용 검증 전  
 **용도:** 카카오 AI 루키캠프 포트폴리오, 중학생 연구자의 이미지 처리 및 오차 검증  
 **중요:** 이 V1은 OpenCV 기반 *전통적 이미지 처리*이며 학습형 AI 모델은 아직 없습니다.

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+sample_cidacc/
+audit_labels/
+*.zip
+zenodo.json
+zip-tail.bin
+*_local.py
+class_review.png
+validation_preview.png
+*.whl

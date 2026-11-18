@@ -96,6 +96,11 @@ def analysis_row(image_name, image_hash, cfg: Config, analysis, edits, manual_co
 
 
 st.title("🧫 Chlorella Vision")
+workflow = st.sidebar.radio("작업 선택", ["V1 · 한 장 분석·수동 검증", "V2 · CIDACC 일괄 검증"])
+if workflow == "V2 · CIDACC 일괄 검증":
+    from core.batch_ui import render_batch
+    render_batch()
+    st.stop()
 st.caption("클로렐라 현미경 이미지 자동 계수 · 수동 검증 · 오차 분석")
 st.info("**V1은 OpenCV 기반 이미지 처리 도구입니다. 학습형 AI 모델이 아니며, 검출 결과는 사람이 검증해야 합니다.**")
 
