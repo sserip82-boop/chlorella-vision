@@ -6,6 +6,7 @@ from PIL import Image
 from core.comparison import comparison_images
 from core.detector import Config, detect, read_image
 from core.dataset import DATA_ROOT
+from core.comparison import reference_image
 
 
 def test_before_unchanged_after_has_detection_marks():
@@ -20,3 +21,14 @@ def test_before_unchanged_after_has_detection_marks():
         comparison_images(data,Config(),expected+1,hashlib.sha256(data).hexdigest())
     with pytest.raises(ValueError,match='변경'):
         comparison_images(data,Config(),expected,'wrong-hash')
+
+
+def test_reference_marks_annotated_cells_only():
+    data=(DATA_ROOT/'distinct/images/103.png').read_bytes()
+    annotation=(DATA_ROOT/'distinct/bbs/103.txt').read_bytes()
+    marked=reference_image(data,annotation,7)
+    pixels=np.array(Image.open(io.BytesIO(marked)))
+    assert np.any(np.all(pixels==[41,153,255],axis=2))
+    assert not np.array_equal(pixels,np.array(read_image(data)))
+    with pytest.raises(ValueError,match='정답 표시'):
+        reference_image(data,annotation,8)
