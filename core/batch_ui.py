@@ -1,7 +1,7 @@
 """Streamlit entry point for V2; V1 remains accessible unchanged."""
 import hashlib
 import zipfile
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 import pandas as pd
 import streamlit as st
 from core.batch import analyze_batch, batch_csv, zip_inputs
@@ -13,10 +13,23 @@ def render_batch():
     st.write("동일한 이름의 이미지와 TXT를 자동 연결합니다. 예: 101.png ↔ 101.txt")
     st.info("OpenCV 계수 오차 검증입니다. 학습형 AI 정확도나 개별 위치 검출 정확도가 아닙니다.")
     st.caption("CIDACC 13219972 기준: 클래스 0 = 개별 세포, 1 = 뭉침(정답 개수 제외). 근거: docs/cidacc_class_audit.md")
-    source = st.radio("데이터 준비 방법", ["이미지와 TXT 함께 업로드", "CIDACC ZIP 업로드"])
+    source = st.radio("데이터 준비 방법", ["준비된 CIDACC 샘플 10장", "이미지와 TXT 함께 업로드", "CIDACC ZIP 업로드"])
     files = []
     try:
-        if source == "CIDACC ZIP 업로드":
+        if source == "준비된 CIDACC 샘플 10장":
+            root = Path(__file__).resolve().parents[1] / "data" / "cidacc_sample"
+            files = [(f"distinct/{sub}/{p.name}", p.read_bytes())
+                     for sub, ext in (("images", "*.png"), ("bbs", "*.txt"))
+                     for p in sorted((root / sub).glob(ext))]
+            if len(files) != 20:
+                raise ValueError("기본 샘플 파일이 누락되었습니다. 이미지와 TXT 업로드를 선택하세요.")
+            st.success("CIDACC 사진 10장과 정답 TXT가 준비되어 있습니다. 아래 일괄 분석 실행을 누르세요.")
+            st.caption("출처: Pistolas et al. (2024), [CIDACC · Zenodo](https://doi.org/10.5281/zenodo.13219972), "
+                       "[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). 원본 중 10장과 대응 주석을 변경 없이 발췌했습니다.")
+            with st.expander("준비된 사진 보기"):
+                st.image([data for name, data in files if name.endswith(".png")],
+                         caption=[PurePosixPath(name).name for name, _ in files if name.endswith(".png")], width=150)
+        elif source == "CIDACC ZIP 업로드":
             up = st.file_uploader("원본 CIDACC-dataset.zip 또는 distinct 폴더 ZIP", type=["zip"])
             if up:
                 files = zip_inputs(up.getvalue())

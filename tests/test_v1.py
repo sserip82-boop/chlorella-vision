@@ -22,6 +22,7 @@ def test_demo_detector_and_editor():
 def test_v1_and_v2_screen():
     at=AppTest.from_file(Path("app.py").resolve(), default_timeout=20).run()
     assert not at.exception
+    at.sidebar.radio[0].set_value("V1 · 한 장 분석·수동 검증").run()
     at.sidebar.radio[1].set_value("합성 데모 이미지").run()
     assert not at.exception
     button=next(b for b in at.button if "이미지 자동 분석 실행" in b.label)
@@ -49,6 +50,7 @@ st.file_uploader=lambda *a,**k: [Upload(p) for sub in ('images','bbs') for p in 
 render_batch()
 '''
     at=AppTest.from_string(script,default_timeout=20).run()
+    at.radio[0].set_value("이미지와 TXT 함께 업로드").run()
     at.button[0].click().run()
     assert not at.exception
     assert len(at.dataframe[0].value)==10
@@ -57,3 +59,16 @@ render_batch()
     at.slider[0].set_value(51).run()
     assert not at.exception
     assert not at.dataframe
+
+
+def test_bundled_samples_ready_without_upload():
+    at=AppTest.from_file(Path("app.py").resolve(), default_timeout=20).run()
+    at.sidebar.radio[0].set_value("V2 · CIDACC 일괄 검증").run()
+    assert not at.exception
+    assert not at.get("file_uploader")
+    button=next(b for b in at.button if b.label=="일괄 분석 실행")
+    assert not button.disabled
+    button.click().run()
+    assert not at.exception
+    assert len(at.dataframe[0].value)==10
+    assert at.metric[0].value=="32.6"

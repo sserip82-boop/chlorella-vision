@@ -96,7 +96,7 @@ def analysis_row(image_name, image_hash, cfg: Config, analysis, edits, manual_co
 
 
 st.title("🧫 Chlorella Vision")
-workflow = st.sidebar.radio("작업 선택", ["V1 · 한 장 분석·수동 검증", "V2 · CIDACC 일괄 검증"])
+workflow = st.sidebar.radio("작업 선택", ["V1 · 한 장 분석·수동 검증", "V2 · CIDACC 일괄 검증"], index=1)
 if workflow == "V2 · CIDACC 일괄 검증":
     from core.batch_ui import render_batch
     render_batch()
