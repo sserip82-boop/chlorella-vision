@@ -31,13 +31,10 @@ def test_v1_and_v2_screen():
     assert at.session_state["analysis"]["data"]["count"]==18
     at.sidebar.radio[0].set_value("V2 · CIDACC 일괄 검증").run()
     assert not at.exception
-    assert any("일괄 분석 실행" in b.label for b in at.button)
+    assert any("전체 분석 실행" in b.label for b in at.button)
 
 
 def test_batch_ui_real_inputs():
-    if not Path("sample_cidacc/distinct").exists():
-        import pytest
-        pytest.skip("CIDACC 원본은 별도 다운로드")
     # AppTest does not drive file uploads; provide real upload bytes at that boundary.
     script = '''
 from pathlib import Path
@@ -46,7 +43,9 @@ from core.batch_ui import render_batch
 class Upload:
     def __init__(self,p): self.name=p.name; self.p=p
     def getvalue(self): return self.p.read_bytes()
-st.file_uploader=lambda *a,**k: [Upload(p) for sub in ('images','bbs') for p in sorted((Path('sample_cidacc/distinct')/sub).glob('*'))]
+root=Path('data/cidacc/distinct')
+names={p.stem for p in sorted((root/'images').glob('*.png'))[:10]}
+st.file_uploader=lambda *a,**k: [Upload(p) for sub in ('images','bbs') for p in sorted((root/sub).glob('*')) if p.stem in names]
 render_batch()
 '''
     at=AppTest.from_string(script,default_timeout=20).run()
@@ -61,14 +60,21 @@ render_batch()
     assert not at.dataframe
 
 
-def test_bundled_samples_ready_without_upload():
-    at=AppTest.from_file(Path("app.py").resolve(), default_timeout=20).run()
+def test_bundled_full_dataset_ready_without_upload():
+    at=AppTest.from_file(Path("app.py").resolve(), default_timeout=60).run()
     at.sidebar.radio[0].set_value("V2 · CIDACC 일괄 검증").run()
     assert not at.exception
     assert not at.get("file_uploader")
-    button=next(b for b in at.button if b.label=="일괄 분석 실행")
+    button=next(b for b in at.button if b.label=="전체 분석 실행")
     assert not button.disabled
     button.click().run()
     assert not at.exception
-    assert len(at.dataframe[0].value)==10
-    assert at.metric[0].value=="32.6"
+    assert len(at.dataframe[0].value)==464
+    assert at.metric[0].value=="15.058"
+    assert len(at.get("download_button"))==1
+    next(r for r in at.radio if r.label=="사진 종류").set_value("뭉친 세포 · 164장").run()
+    assert not at.exception
+    assert not at.dataframe
+    assert not at.get("download_button")
+    assert not at.button
+    assert any("개별 세포 정답 개수" in w.value for w in at.warning)

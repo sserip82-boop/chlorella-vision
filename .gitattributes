@@ -1,0 +1,2 @@
+# Keep distributed dataset bytes identical to the source on Windows and Linux.
+data/cidacc/** -text

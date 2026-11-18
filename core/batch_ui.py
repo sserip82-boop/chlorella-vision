@@ -1,45 +1,68 @@
 """Streamlit entry point for V2; V1 remains accessible unchanged."""
 import hashlib
 import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 import pandas as pd
 import streamlit as st
 from core.batch import analyze_batch, batch_csv, zip_inputs
 from core.detector import Config
+from core.dataset import bundled_files
+
+
+@st.cache_data(show_spinner=False, max_entries=2)
+def load_bundled(group):
+    return bundled_files(group)
+
+
+def preview(files, group):
+    images = [(name, data) for name, data in files if name.endswith(".png")]
+    with st.expander(f"준비된 사진 보기 ({len(images)}장)"):
+        pages = (len(images) + 11) // 12
+        page = st.selectbox("사진 페이지", range(1, pages + 1), key=f"preview_{group}")
+        shown = images[(page-1)*12:page*12]
+        st.image([data for _, data in shown], caption=[PurePosixPath(name).name for name, _ in shown], width=150)
+        st.caption("한 페이지에 최대 12장씩 보여 줍니다.")
 
 
 def render_batch():
-    st.subheader("V2 · CIDACC 10장 일괄 검증")
+    st.subheader("V2 · CIDACC 전체 검증")
     st.write("동일한 이름의 이미지와 TXT를 자동 연결합니다. 예: 101.png ↔ 101.txt")
     st.info("OpenCV 계수 오차 검증입니다. 학습형 AI 정확도나 개별 위치 검출 정확도가 아닙니다.")
     st.caption("CIDACC 13219972 기준: 클래스 0 = 개별 세포, 1 = 뭉침(정답 개수 제외). 근거: docs/cidacc_class_audit.md")
-    source = st.radio("데이터 준비 방법", ["준비된 CIDACC 샘플 10장", "이미지와 TXT 함께 업로드", "CIDACC ZIP 업로드"])
+    source = st.radio("데이터 준비 방법", ["준비된 CIDACC 전체 데이터", "이미지와 TXT 함께 업로드", "CIDACC ZIP 업로드"])
     files = []
     try:
-        if source == "준비된 CIDACC 샘플 10장":
-            root = Path(__file__).resolve().parents[1] / "data" / "cidacc_sample"
-            files = [(f"distinct/{sub}/{p.name}", p.read_bytes())
-                     for sub, ext in (("images", "*.png"), ("bbs", "*.txt"))
-                     for p in sorted((root / sub).glob(ext))]
-            if len(files) != 20:
-                raise ValueError("기본 샘플 파일이 누락되었습니다. 이미지와 TXT 업로드를 선택하세요.")
-            st.success("CIDACC 사진 10장과 정답 TXT가 준비되어 있습니다. 아래 일괄 분석 실행을 누르세요.")
+        if source == "준비된 CIDACC 전체 데이터":
             st.caption("출처: Pistolas et al. (2024), [CIDACC · Zenodo](https://doi.org/10.5281/zenodo.13219972), "
-                       "[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). 원본 중 10장과 대응 주석을 변경 없이 발췌했습니다.")
-            with st.expander("준비된 사진 보기"):
-                st.image([data for name, data in files if name.endswith(".png")],
-                         caption=[PurePosixPath(name).name for name, _ in files if name.endswith(".png")], width=150)
+                       "[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). 640×640 사진 628장과 TXT를 변경 없이 포함했습니다.")
+            group = st.radio("사진 종류", ["개별 세포 · 464장", "뭉친 세포 · 164장"])
+            if group == "뭉친 세포 · 164장":
+                st.warning("뭉친 세포 사진은 개별 세포 정답 개수를 확정할 수 없어 전체 오차 검증에서 제외합니다. 사진 확인용 메뉴입니다.")
+                preview(load_bundled("clusters"), "clusters")
+                return
+            files = load_bundled("distinct")
+            selection = st.radio("분석 범위", ["전체 464장", "일부 사진 선택"])
+            if selection == "일부 사진 선택":
+                names = [n for n, _ in files if n.endswith(".png")]
+                selected = st.multiselect("분석할 사진", names, default=names[:10])
+                stems = {PurePosixPath(n).stem for n in selected}
+                files = [(n, data) for n, data in files if PurePosixPath(n).stem in stems]
+            count = sum(n.endswith(".png") for n, _ in files)
+            st.success(f"사진 {count}장과 정답 TXT가 준비되어 있습니다. 아래 분석 실행을 누르세요.")
+            st.caption("원본 주석이 비어 있는 335.png, 515.png는 오류로 안내하며 평균 오차에서 제외합니다.")
+            if files:
+                preview(files, "distinct")
         elif source == "CIDACC ZIP 업로드":
             up = st.file_uploader("원본 CIDACC-dataset.zip 또는 distinct 폴더 ZIP", type=["zip"])
             if up:
                 files = zip_inputs(up.getvalue())
                 names = [n for n, _ in files if "/images/" in n and n.lower().endswith(".png")]
-                selected = st.multiselect("분석할 사진 (최대 10장)", sorted(names), default=sorted(names)[:10], max_selections=10)
+                selected = st.multiselect("분석할 사진 (최대 464장)", sorted(names), default=sorted(names), max_selections=464)
                 stems = {PurePosixPath(n).stem.casefold() for n in selected}
                 files = [(n, b) for n, b in files if n in selected or
                          (n.lower().endswith(".txt") and PurePosixPath(n).stem.casefold() in stems)]
         else:
-            st.write("distinct/images의 사진 10장과 distinct/bbs의 같은 이름 TXT 10개를 함께 선택하세요.")
+            st.write("distinct/images의 사진과 distinct/bbs의 같은 이름 TXT를 함께 선택하세요. 최대 464장입니다.")
             uploads = st.file_uploader("PNG 사진과 bbs TXT", type=["png", "txt"], accept_multiple_files=True)
             files = [(u.name, u.getvalue()) for u in uploads]
         mode = st.selectbox("검출 방식", ["auto", "gray", "green"])
@@ -49,16 +72,21 @@ def render_batch():
         maximum = b.number_input("최대 면적(px²)", min_value=1, value=2200, key="batch_max")
         cfg = Config(mode=mode, sensitivity=sensitivity, min_area=minimum, max_area=maximum)
         fingerprint = hashlib.sha256(repr(([(n, hashlib.sha256(d).hexdigest()) for n, d in files], cfg)).encode()).hexdigest()
-        if st.button("일괄 분석 실행", disabled=not files, type="primary"):
+        run_label = "전체 분석 실행" if source == "준비된 CIDACC 전체 데이터" and selection == "전체 464장" else "일괄 분석 실행"
+        if st.button(run_label, disabled=not files, type="primary"):
             with st.spinner("사진과 정답 주석을 비교하고 있습니다…"):
-                st.session_state["batch_result"] = (fingerprint, analyze_batch(files, cfg))
+                bar = st.progress(0, text="분석 준비 중")
+                def update(done, total):
+                    bar.progress(done/total, text=f"{done} / {total}장 처리")
+                st.session_state["batch_result"] = (fingerprint, analyze_batch(files, cfg, progress=update))
+                bar.empty()
         saved = st.session_state.get("batch_result")
         if saved and saved[0] == fingerprint:
             rows = saved[1]
             good = [r for r in rows if r["status"] == "ok"]
             st.write(f"정상 {len(good)}장 / 오류 {len(rows)-len(good)}건")
-            if len(good) != 10:
-                st.warning("정상 처리된 사진이 10장이 아닙니다. 오류를 확인하거나 사진을 추가하세요.")
+            if len(good) != len(rows):
+                st.warning("오류가 있는 사진은 정답·오차를 계산하지 않았습니다. 표의 안내를 확인하세요.")
             if good:
                 st.metric("정상 사진의 평균 절대오차(MAE)", round(sum(r["absolute_error"] for r in good)/len(good), 3))
             table = pd.DataFrame(rows)

@@ -5,6 +5,7 @@ import hashlib
 import io
 from pathlib import PurePosixPath
 import zipfile
+from collections.abc import Callable
 
 from core.annotations import parse_yolo
 from core.detector import Config, detect, read_image
@@ -14,6 +15,7 @@ CLASS_EVIDENCE = "CIDACC-13219972-audit-2026-11-18"
 CELL_CLASS = 0
 CLUSTER_CLASS = 1
 MAX_FILE = 10 * 1024 * 1024
+MAX_IMAGES = 464
 
 
 def zip_inputs(data: bytes) -> list[tuple[str, bytes]]:
@@ -40,7 +42,8 @@ def zip_inputs(data: bytes) -> list[tuple[str, bytes]]:
     return result
 
 
-def analyze_batch(files: list[tuple[str, bytes]], config: Config = Config()) -> list[dict]:
+def analyze_batch(files: list[tuple[str, bytes]], config: Config = Config(),
+                  progress: Callable[[int, int], None] | None = None) -> list[dict]:
     images, labels = {}, {}
     for name, data in files:
         p = PurePosixPath(name.replace("\\", "/"))
@@ -49,8 +52,8 @@ def analyze_batch(files: list[tuple[str, bytes]], config: Config = Config()) -> 
         target = images if p.suffix.lower() in (".png", ".jpg", ".jpeg") else labels if p.suffix.lower() == ".txt" else None
         if target is not None:
             target.setdefault(p.stem.casefold(), []).append((name, data))
-    if not 1 <= len(images) <= 10:
-        raise ValueError("이미지는 1~10장이어야 합니다. 10장을 선택해 주세요.")
+    if not 1 <= len(images) <= MAX_IMAGES:
+        raise ValueError(f"이미지는 1~{MAX_IMAGES}장이어야 합니다.")
     rows = []
     for stem, entries in sorted(images.items()):
         name, data = entries[0]
@@ -88,6 +91,8 @@ def analyze_batch(files: list[tuple[str, bytes]], config: Config = Config()) -> 
         except (ValueError, OSError, UnicodeError) as exc:
             row["message"] = str(exc)
         rows.append(row)
+        if progress is not None:
+            progress(len(rows), len(images))
     # Surface orphan labels rather than silently discarding them.
     for stem in sorted(labels.keys() - images.keys()):
         rows.append(dict(image_name="", annotation_name=labels[stem][0][0], status="error",

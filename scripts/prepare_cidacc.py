@@ -11,10 +11,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("zip_path", type=Path)
     parser.add_argument("--output", type=Path, default=Path("sample_cidacc"))
-    parser.add_argument("--count", type=int, default=10)
+    parser.add_argument("--count", type=int, default=464)
     args = parser.parse_args()
-    if not 1 <= args.count <= 10:
-        parser.error("count는 1~10이어야 합니다.")
+    if not 1 <= args.count <= 464:
+        parser.error("count는 1~464이어야 합니다.")
     files = zip_inputs(args.zip_path.read_bytes())
     images = sorted((n,b) for n,b in files if PurePosixPath(n).suffix.lower() == ".png")[:args.count]
     selected = {PurePosixPath(n).stem for n,_ in images}

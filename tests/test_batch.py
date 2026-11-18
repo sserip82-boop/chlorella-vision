@@ -54,10 +54,11 @@ def test_zero_truth_and_orphan(image):
     assert rows[1]["status"] == "error"
 
 
-def test_ten_and_limit(image):
+def test_batch_size_and_limit(image):
     files=[(f"{i}.{ext}", image if ext=="png" else LABEL) for i in range(10) for ext in ("png","txt")]
     assert len(analyze_batch(files)) == 10
-    with pytest.raises(ValueError): analyze_batch(files+[("11.png",image)])
+    assert len(analyze_batch(files+[("11.png",image),("11.txt",LABEL)]))==11
+    with pytest.raises(ValueError): analyze_batch([(f"{i}.png",image) for i in range(465)])
     with pytest.raises(ValueError): analyze_batch([])
     with pytest.raises(ValueError): analyze_batch([("clusters/images/a.png",image)])
 
@@ -76,10 +77,10 @@ def test_zip_and_csv(image):
     assert "'=1+1" in data.decode("utf-8-sig")
 
 
-def test_real_ten_if_available():
-    root=Path("sample_cidacc/distinct")
-    if not root.exists(): pytest.skip("CIDACC 원본은 별도 다운로드")
-    files=[(p.as_posix(),p.read_bytes()) for sub in ("images","bbs") for p in (root/sub).glob("*")]
+def test_real_ten():
+    root=Path("data/cidacc/distinct")
+    names={p.stem for p in sorted((root/'images').glob('*.png'))[:10]}
+    files=[(p.as_posix(),p.read_bytes()) for sub in ("images","bbs") for p in (root/sub).glob("*") if p.stem in names]
     rows=analyze_batch(files)
     assert len(rows)==10 and all(r["status"]=="ok" for r in rows)
     assert [r["ground_truth_count"] for r in rows]==[2,6,6,2,7,26,8,2,4,1]
