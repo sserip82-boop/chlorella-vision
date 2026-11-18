@@ -1,4 +1,4 @@
-"""Streamlit entry point for V2; V1 remains accessible unchanged."""
+"""Simple upload-free batch workflow, with optional advanced controls."""
 import hashlib
 import zipfile
 from pathlib import PurePosixPath
@@ -7,6 +7,7 @@ import streamlit as st
 from core.batch import analyze_batch, batch_csv, zip_inputs
 from core.detector import Config
 from core.dataset import bundled_files
+from core.comparison import comparison_images
 
 
 @st.cache_data(show_spinner=False, max_entries=2)
@@ -14,89 +15,128 @@ def load_bundled(group):
     return bundled_files(group)
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
+def comparison(data, config, expected_count, expected_sha):
+    return comparison_images(data, config, expected_count, expected_sha)
+
+
 def preview(files, group):
-    images = [(name, data) for name, data in files if name.endswith(".png")]
-    with st.expander(f"준비된 사진 보기 ({len(images)}장)"):
-        pages = (len(images) + 11) // 12
-        page = st.selectbox("사진 페이지", range(1, pages + 1), key=f"preview_{group}")
-        shown = images[(page-1)*12:page*12]
-        st.image([data for _, data in shown], caption=[PurePosixPath(name).name for name, _ in shown], width=150)
-        st.caption("한 페이지에 최대 12장씩 보여 줍니다.")
+    images = [(n,d) for n,d in files if n.endswith('.png')]
+    if not images:
+        return
+    page = st.selectbox('사진 페이지', range(1, (len(images)+11)//12+1), key=f'preview_{group}')
+    shown = images[(page-1)*12:page*12]
+    st.image([d for _,d in shown], caption=[PurePosixPath(n).name for n,_ in shown], width=150)
+
+
+def show_comparison(rows, files, cfg, fingerprint):
+    image_data = dict(files)
+    choices = [i for i,r in enumerate(rows) if r.get('image_name') in image_data]
+    if not choices:
+        return
+    st.subheader('② 사진으로 결과 확인')
+    chosen = st.selectbox('확인할 사진', choices,
+        format_func=lambda i: PurePosixPath(rows[i]['image_name']).name + (' · 주석 오류' if rows[i]['status']=='error' else ''),
+        key=f'comparison_{fingerprint[:16]}')
+    row = rows[chosen]
+    data = image_data[row['image_name']]
+    if row['status'] != 'ok':
+        st.warning(f"이 사진은 정답 검증을 하지 못했습니다: {row['message']}")
+        try:
+            from core.detector import read_image
+            st.image(read_image(data), caption='분석 전 · 원본', use_container_width=True)
+        except (ValueError, OSError):
+            st.error('사진을 열 수 없습니다.')
+        return
+    before, after = comparison(data, cfg, row['auto_count'], row['image_sha256'])
+    a,b,c=st.columns(3)
+    a.metric('자동으로 센 수', f"{row['auto_count']}개")
+    b.metric('정답 개수', f"{row['ground_truth_count']}개")
+    c.metric('개수 차이', f"{row['absolute_error']}개")
+    left,right=st.columns(2)
+    left.image(before, caption='분석 전 · 원본', use_container_width=True)
+    right.image(after, caption='분석 후 · 검출 위치 표시', use_container_width=True)
+    st.caption('초록색 원: 자동으로 센 세포 후보 · 주황색 원: 불확실한 영역(계수 제외). 초록색 표시가 모두 실제 세포라는 뜻은 아닙니다.')
+    st.download_button('이 분석 사진 저장', after, f"{PurePosixPath(row['image_name']).stem}_detected.png", 'image/png')
 
 
 def render_batch():
-    st.subheader("V2 · CIDACC 전체 검증")
-    run_slot = st.container()
-    st.write("동일한 이름의 이미지와 TXT를 자동 연결합니다. 예: 101.png ↔ 101.txt")
-    st.info("OpenCV 계수 오차 검증입니다. 학습형 AI 정확도나 개별 위치 검출 정확도가 아닙니다.")
-    st.caption("CIDACC 13219972 기준: 클래스 0 = 개별 세포, 1 = 뭉침(정답 개수 제외). 근거: docs/cidacc_class_audit.md")
-    source = st.radio("데이터 준비 방법", ["준비된 CIDACC 전체 데이터", "이미지와 TXT 함께 업로드", "CIDACC ZIP 업로드"])
-    files = []
+    st.subheader('사진 속 세포, 한 번에 확인하세요')
+    st.write('사진 464장이 준비되어 있습니다. 분석 시작을 누르면 원본과 검출 표시를 비교할 수 있습니다.')
+    run_slot=st.container()
+    files=[]
+    cfg=Config()
     try:
-        if source == "준비된 CIDACC 전체 데이터":
-            st.caption("출처: Pistolas et al. (2024), [CIDACC · Zenodo](https://doi.org/10.5281/zenodo.13219972), "
-                       "[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). 640×640 사진 628장과 TXT를 변경 없이 포함했습니다.")
-            group = st.radio("사진 종류", ["개별 세포 · 464장", "뭉친 세포 · 164장"])
-            if group == "뭉친 세포 · 164장":
-                st.warning("뭉친 세포 사진은 개별 세포 정답 개수를 확정할 수 없어 전체 오차 검증에서 제외합니다. 사진 확인용 메뉴입니다.")
-                preview(load_bundled("clusters"), "clusters")
-                return
-            files = load_bundled("distinct")
-            selection = st.radio("분석 범위", ["전체 464장", "일부 사진 선택"])
-            if selection == "일부 사진 선택":
-                names = [n for n, _ in files if n.endswith(".png")]
-                selected = st.multiselect("분석할 사진", names, default=names[:10])
-                stems = {PurePosixPath(n).stem for n in selected}
-                files = [(n, data) for n, data in files if PurePosixPath(n).stem in stems]
-            count = sum(n.endswith(".png") for n, _ in files)
-            st.success(f"사진 {count}장과 정답 TXT가 준비되어 있습니다. 위쪽의 분석 실행 버튼을 누르세요.")
-            st.caption("원본 주석이 비어 있는 335.png, 515.png는 오류로 안내하며 평균 오차에서 제외합니다.")
-            if files:
-                preview(files, "distinct")
-        elif source == "CIDACC ZIP 업로드":
-            up = st.file_uploader("원본 CIDACC-dataset.zip 또는 distinct 폴더 ZIP", type=["zip"])
-            if up:
-                files = zip_inputs(up.getvalue())
-                names = [n for n, _ in files if "/images/" in n and n.lower().endswith(".png")]
-                selected = st.multiselect("분석할 사진 (최대 464장)", sorted(names), default=sorted(names), max_selections=464)
-                stems = {PurePosixPath(n).stem.casefold() for n in selected}
-                files = [(n, b) for n, b in files if n in selected or
-                         (n.lower().endswith(".txt") and PurePosixPath(n).stem.casefold() in stems)]
-        else:
-            st.write("distinct/images의 사진과 distinct/bbs의 같은 이름 TXT를 함께 선택하세요. 최대 464장입니다.")
-            uploads = st.file_uploader("PNG 사진과 bbs TXT", type=["png", "txt"], accept_multiple_files=True)
-            files = [(u.name, u.getvalue()) for u in uploads]
-        mode = st.selectbox("검출 방식", ["auto", "gray", "green"])
-        sensitivity = st.slider("민감도", 0, 100, 50, key="batch_sensitivity")
-        a, b = st.columns(2)
-        minimum = a.number_input("최소 면적(px²)", min_value=1, value=18, key="batch_min")
-        maximum = b.number_input("최대 면적(px²)", min_value=1, value=2200, key="batch_max")
-        cfg = Config(mode=mode, sensitivity=sensitivity, min_area=minimum, max_area=maximum)
-        fingerprint = hashlib.sha256(repr(([(n, hashlib.sha256(d).hexdigest()) for n, d in files], cfg)).encode()).hexdigest()
-        run_label = "전체 분석 실행" if source == "준비된 CIDACC 전체 데이터" and selection == "전체 464장" else "일괄 분석 실행"
-        if run_slot.button(run_label, disabled=not files, type="primary", use_container_width=True):
-            with st.spinner("사진과 정답 주석을 비교하고 있습니다…"):
-                bar = st.progress(0, text="분석 준비 중")
-                def update(done, total):
-                    bar.progress(done/total, text=f"{done} / {total}장 처리")
-                st.session_state["batch_result"] = (fingerprint, analyze_batch(files, cfg, progress=update))
+        with st.expander('다른 사진 선택 · 분석 설정 (선택 사항)'):
+            source=st.radio('데이터 준비 방법', ['준비된 CIDACC 전체 데이터','이미지와 TXT 함께 업로드','CIDACC ZIP 업로드'])
+            if source=='준비된 CIDACC 전체 데이터':
+                group=st.radio('사진 종류',['개별 세포 · 464장','뭉친 세포 · 164장'])
+                if group=='뭉친 세포 · 164장':
+                    cluster_view=True
+                    files=load_bundled('clusters')
+                else:
+                    cluster_view=False
+                    files=load_bundled('distinct')
+                    selection=st.radio('분석 범위',['전체 464장','일부 사진 선택'])
+                    if selection=='일부 사진 선택':
+                        names=[n for n,_ in files if n.endswith('.png')]
+                        selected=st.multiselect('분석할 사진',names,default=names[:10])
+                        stems={PurePosixPath(n).stem for n in selected}
+                        files=[(n,d) for n,d in files if PurePosixPath(n).stem in stems]
+            elif source=='CIDACC ZIP 업로드':
+                cluster_view=False
+                up=st.file_uploader('CIDACC ZIP',type=['zip'])
+                if up:
+                    files=zip_inputs(up.getvalue())
+                    names=[n for n,_ in files if '/images/' in n and n.lower().endswith('.png')]
+                    selected=st.multiselect('분석할 사진 (최대 464장)',sorted(names),default=sorted(names),max_selections=464)
+                    stems={PurePosixPath(n).stem.casefold() for n in selected}
+                    files=[(n,d) for n,d in files if n in selected or (n.lower().endswith('.txt') and PurePosixPath(n).stem.casefold() in stems)]
+            else:
+                cluster_view=False
+                st.write('distinct 이미지와 같은 이름의 정답 TXT를 함께 선택하세요.')
+                uploads=st.file_uploader('PNG 사진과 bbs TXT',type=['png','txt'],accept_multiple_files=True)
+                files=[(u.name,u.getvalue()) for u in uploads]
+            if not cluster_view:
+                mode=st.selectbox('검출 방식',['auto','gray','green'])
+                sensitivity=st.slider('민감도',0,100,50,key='batch_sensitivity')
+                a,b=st.columns(2)
+                minimum=a.number_input('최소 면적(px²)',min_value=1,value=18,key='batch_min')
+                maximum=b.number_input('최대 면적(px²)',min_value=1,value=2200,key='batch_max')
+                cfg=Config(mode=mode,sensitivity=sensitivity,min_area=minimum,max_area=maximum)
+        if cluster_view:
+            st.warning('뭉친 세포 사진은 개별 세포 정답 개수를 확인하기 어려워 사진만 볼 수 있습니다.')
+            preview(files,'clusters')
+            return
+        count=sum(PurePosixPath(n).suffix.lower() in ('.png','.jpg','.jpeg') for n,_ in files)
+        fingerprint=hashlib.sha256(repr(([(n,hashlib.sha256(d).hexdigest()) for n,d in files],cfg)).encode()).hexdigest()
+        if run_slot.button(f'① 분석 시작 · {count}장',disabled=not files,type='primary',use_container_width=True):
+            with st.spinner('사진을 분석하고 있습니다…'):
+                bar=st.progress(0)
+                st.session_state['batch_result']=(fingerprint,analyze_batch(files,cfg,progress=lambda done,total:bar.progress(done/total,text=f'{done} / {total}장 처리')))
                 bar.empty()
-        saved = st.session_state.get("batch_result")
-        if saved and saved[0] == fingerprint:
-            rows = saved[1]
-            good = [r for r in rows if r["status"] == "ok"]
-            st.write(f"정상 {len(good)}장 / 오류 {len(rows)-len(good)}건")
-            if len(good) != len(rows):
-                st.warning("오류가 있는 사진은 정답·오차를 계산하지 않았습니다. 표의 안내를 확인하세요.")
-            if good:
-                st.metric("정상 사진의 평균 절대오차(MAE)", round(sum(r["absolute_error"] for r in good)/len(good), 3))
-            table = pd.DataFrame(rows)
-            st.dataframe(table.reindex(columns=["image_name", "auto_count", "ground_truth_count", "absolute_error", "percentage_error", "cluster_annotations", "status", "message"]).rename(columns={
-                "image_name":"사진", "auto_count":"자동 계수", "ground_truth_count":"정답 개수",
-                "absolute_error":"절대오차", "percentage_error":"오차율(%)", "cluster_annotations":"뭉침 주석", "status":"상태", "message":"안내"}), hide_index=True)
-            st.caption("오차율 = |자동 계수 − 정답 개수| ÷ 정답 개수 × 100. 정답 0개는 비워 둡니다. 오류 행은 평균에서 제외합니다.")
-            st.download_button("전체 결과 CSV 다운로드", batch_csv(rows), "cidacc_batch_validation.csv", "text/csv")
+        saved=st.session_state.get('batch_result')
+        if saved and saved[0]==fingerprint:
+            rows=saved[1]
+            good=[r for r in rows if r['status']=='ok']
+            st.success(f"분석 완료 · 정상 {len(good)}장 / 확인이 필요한 파일 {len(rows)-len(good)}건")
+            show_comparison(rows,files,cfg,fingerprint)
+            st.subheader('③ 전체 결과 저장')
+            st.download_button('전체 결과 CSV 다운로드',batch_csv(rows),'cidacc_batch_validation.csv','text/csv')
+            with st.expander('전체 결과표 · 오류 내용 보기'):
+                if good:
+                    st.metric('평균 개수 차이(MAE)',round(sum(r['absolute_error'] for r in good)/len(good),3))
+                table=pd.DataFrame(rows)
+                st.dataframe(table.reindex(columns=['image_name','auto_count','ground_truth_count','absolute_error','percentage_error','status','message']).rename(columns={
+                    'image_name':'사진','auto_count':'자동 계수','ground_truth_count':'정답 개수','absolute_error':'절대오차','percentage_error':'오차율(%)','status':'상태','message':'안내'}),hide_index=True)
+                st.caption('정답이 없거나 잘못된 사진은 오차 계산에서 제외합니다. 정답이 0개면 백분율오차를 계산하지 않습니다.')
         elif saved:
-            st.info("입력 또는 설정이 바뀌었습니다. 일괄 분석을 다시 실행하세요.")
-    except (ValueError, OSError, zipfile.BadZipFile, RuntimeError) as exc:
-        st.error(f"분석할 수 없습니다: {exc}")
+            st.info('사진 또는 설정이 바뀌었습니다. 분석 시작을 다시 눌러 주세요.')
+        else:
+            st.caption('처음에는 설정을 바꾸지 않고 분석 시작을 눌러 보세요.')
+        with st.expander('이 앱과 데이터 안내'):
+            st.write('OpenCV 이미지 처리 도구이며 학습형 AI가 아닙니다. 격자선을 세포로 잘못 셀 수 있어 분석 후 사진을 확인하세요.')
+            st.caption('출처: Pistolas et al. (2024), [CIDACC](https://doi.org/10.5281/zenodo.13219972), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). 사진·TXT는 원본 그대로 포함했습니다.')
+            st.caption('클래스 0은 개별 세포, 1은 뭉침(계수 제외)입니다. 원본 335.txt, 515.txt는 비어 있어 오류로 안내합니다.')
+    except (ValueError,OSError,zipfile.BadZipFile,RuntimeError) as exc:
+        st.error(f'분석할 수 없습니다: {exc}')

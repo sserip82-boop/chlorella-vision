@@ -31,7 +31,7 @@ def test_v1_and_v2_screen():
     assert at.session_state["analysis"]["data"]["count"]==18
     at.sidebar.radio[0].set_value("V2 · CIDACC 일괄 검증").run()
     assert not at.exception
-    assert any("전체 분석 실행" in b.label for b in at.button)
+    assert any("분석 시작" in b.label for b in at.button)
 
 
 def test_batch_ui_real_inputs():
@@ -53,8 +53,9 @@ render_batch()
     at.button[0].click().run()
     assert not at.exception
     assert len(at.dataframe[0].value)==10
-    assert len(at.get("download_button"))==1
-    assert at.metric[0].value=="32.6"
+    assert len(at.get("download_button"))==2
+    assert next(m for m in at.metric if m.label=='평균 개수 차이(MAE)').value=="32.6"
+    assert len(at.get('image'))==2
     at.slider[0].set_value(51).run()
     assert not at.exception
     assert not at.dataframe
@@ -65,13 +66,23 @@ def test_bundled_full_dataset_ready_without_upload():
     at.sidebar.radio[0].set_value("V2 · CIDACC 일괄 검증").run()
     assert not at.exception
     assert not at.get("file_uploader")
-    button=next(b for b in at.button if b.label=="전체 분석 실행")
+    button=next(b for b in at.button if '분석 시작' in b.label)
     assert not button.disabled
     button.click().run()
     assert not at.exception
     assert len(at.dataframe[0].value)==464
-    assert at.metric[0].value=="15.058"
-    assert len(at.get("download_button"))==1
+    assert next(m for m in at.metric if m.label=='평균 개수 차이(MAE)').value=="15.058"
+    assert len(at.get("download_button"))==2
+    assert len(at.get('image'))==2
+    picker=next(s for s in at.selectbox if s.label=='확인할 사진')
+    picker.set_value(2).run()
+    assert not at.exception
+    assert at.metric[0].value=='13개'
+    error_index=next(i for i,r in enumerate(at.session_state['batch_result'][1]) if r['image_name'].endswith('/335.png'))
+    next(s for s in at.selectbox if s.label=='확인할 사진').set_value(error_index).run()
+    assert not at.exception
+    assert len(at.get('image'))==1
+    assert len(at.get('download_button'))==1
     next(r for r in at.radio if r.label=="사진 종류").set_value("뭉친 세포 · 164장").run()
     assert not at.exception
     assert not at.dataframe
