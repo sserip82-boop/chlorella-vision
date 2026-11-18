@@ -58,11 +58,15 @@ CSV는 오류 행과 설정, 알고리즘 버전, 이미지/TXT SHA-256도 포�
   브라우저에서 파일 선택·클릭하는 수동 UI 검증은 수행하지 않았다.
 - 원본 ZIP 전체 MD5 확인, 628개 TXT 집계·파싱, 10장 이미지·마스크 대조.
 - `prepare_cidacc.py`를 전체 ZIP으로 실행한 뒤 `validate_cidacc.py`로 같은 결과 재현.
-- `git diff --check`: 통과. GitHub Actions의 원격 실행 결과는 별도 확인 필요.
+- `git diff --check`: 통과.
+- [GitHub Actions 실행 44250961448](https://github.com/sserip82-boop/chlorella-vision/actions/runs/44250961448):
+  **success**. Ubuntu / Python 3.11의 새 환경에서 requirements-dev.txt 설치와 pytest 실행 성공.
+  데이터가 없는 CI에서는 실제 사진 테스트 2개를 제외하고 검사한다.
 
 로컬 환경에서 패키지 인덱스 접근 설정 문제가 있어 기존 설치 패키지를 읽는
 격리 환경으로 테스트했다. streamlit-image-coordinates 0.4.1은 별도로 설치했다.
-깨끗한 PC에서 requirements 전체 신규 설치는 추가 확인이 필요하다.
+GitHub Actions에서 깨끗한 Linux 환경의 전체 신규 설치는 성공했다.
+깨끗한 Windows PC에서의 신규 설치와 수동 브라우저 조작은 추가 확인이 필요하다.
 
 ## 실제 10장 결과 (기본 설정 고정)
 
